@@ -1,0 +1,6 @@
+#ifndef YJSNPI_INITIALIZATION
+#define YJSNPI_INITIALIZATION
+
+void init(void);
+
+#endif /* YJSNPI_INITIALIZATION */
