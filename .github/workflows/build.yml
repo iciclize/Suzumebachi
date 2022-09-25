@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          # - windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install libglu1-mesa-dev mesa-common-dev freeglut3-dev -y
+
+      - if: matrix.os == 'macos-latest'
+        run: brew install freeglut mesa-glu
+
+      # INVALID
+      - if: matrix.os == 'windows-latest'
+        run: |
+          Invoke-WebRequest -Uri "https://www.transmissionzero.co.uk/files/software/development/GLUT/freeglut-MSVC-3.0.0-2.mp.zip" -OutFile freeglut.zip
+          Expand-Archive "freeglut.zip" -DestinationPath .
+          # https://www.cs.uregina.ca/Links/class-info/315/WWW/Lab1/GLUT/windows.html
+          # https://dev.mish.work/wordpress/2021/05/27/win10-glut-install/
+
+      - if: matrix.os != 'windows-latest'
+        run: |
+          make
+          chmod +x main
+          mv main Suzumebachi.bin
+
+      - if: matrix.os == 'windows-latest'
+        run: |
+          make
+          icacls main /grant user:x
+          mv main.exe Suzumebachi.exe
+
+      - uses: actions/upload-artifact@v3
+        if: matrix.os != 'windows-latest'
+        with:
+          name: Suzumebachi_${{ runner.os }}
+          path: |
+            ./Suzumebachi.bin
+            ./*.ppm
+
+      - uses: actions/upload-artifact@v3
+        if: matrix.os == 'windows-latest'
+        with:
+          name: Suzumebachi_${{ runner.os }}
+          path: |
+            ./Suzumebachi.exe
+            ./*.ppm
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Linux
+        uses: actions/download-artifact@v3
+        with:
+          name: Suzumebachi_Linux
+          path: Suzumebachi_Linux
+
+      - name: Download Mac
+        uses: actions/download-artifact@v3
+        with:
+          name: Suzumebachi_macOS
+          path: Suzumebachi_macOS
+
+      # - name: Download Windows
+      #   uses: actions/download-artifact@v3
+      #   with:
+      #     name: Suzumebachi_Windows
+      #     path: Suzumebachi_Windows
+
+      - name: Set env
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> "$GITHUB_ENV"
+
+      - name: Zip
+        run: |
+          ls -la
+          tar czvf Suzumebachi_macos_${RELEASE_VERSION}.tar.gz Suzumebachi_macOS
+          tar czvf Suzumebachi_linux_${RELEASE_VERSION}.tar.gz Suzumebachi_Linux
+          # zip -r Suzumebachi_windows_${RELEASE_VERSION}.zip Suzumebachi_Windows
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ env.RELEASE_VERSION }}
+          draft: false
+          prerelease: false
+
+      - name: Append Binary
+        uses: softprops/action-gh-release@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          files: |
+            Suzumebachi_macos_${{ env.RELEASE_VERSION }}.tar.gz
+            Suzumebachi_linux_${{ env.RELEASE_VERSION }}.tar.gz
+          # Suzumebachi_Windows_${{ env.RELEASE_VERSION }}.tar.gz
